@@ -1,5 +1,26 @@
 # Development Guide
 
+## Scope and source of truth
+
+This file applies to the repository unless a more specific `AGENTS.md` exists in a descendant directory. More-specific instructions take precedence over broader instructions. System, developer, and user instructions take precedence over repository instructions.
+
+Before changing code or documentation:
+
+1. Read the relevant source files, tests, configuration, migrations, scripts, and documentation.
+2. Check the current repository tooling and CI before choosing validation commands.
+3. Identify the authoritative design document for the behavior being changed.
+4. Keep the change focused and avoid inventing packages, commands, policies, or infrastructure that the repository has not established.
+
+The current design references are:
+
+- [`README.md`](README.md): repository entry point.
+- [`docs/architecture.md`](docs/architecture.md): system boundaries and components.
+- [`docs/workflows.md`](docs/workflows.md): operational workflows and lifecycle behavior.
+- [`docs/decisions.md`](docs/decisions.md): recorded design decisions and open questions.
+- [`docs/flows/happy path.md`](docs/flows/happy%20path.md): normal processing flow.
+
+When implementation and documentation disagree, investigate the discrepancy and update the appropriate source of truth. Do not silently choose a new product policy.
+
 ## Project context
 
 This project is a crowdsourced distributed video-compression platform written in Go. A client submits a video and output settings. The service stores the input in S3-compatible object storage, inspects it with FFprobe, and selects either whole-file processing or timeline-based distributed processing. Contributor workers run controlled FFmpeg jobs, upload results, and receive non-monetary credits only after the result is accepted.
@@ -50,7 +71,7 @@ This project uses conventional FFmpeg-based transcoding. It does not implement a
 8. A compatible worker claims a task and receives an attempt ID, lease, and scoped storage URLs.
 9. The worker downloads its input, runs FFmpeg, sends heartbeats, uploads its output, and submits result metadata.
 10. The validator checks the output. A valid current attempt becomes the task's authoritative result.
-11. The assembler combines accepted results and validates the final output.
+11. The assembler combines accepted results and validates the completed video.
 12. The ledger settles eligible credits using an idempotent transaction.
 13. The client receives a temporary download URL.
 14. Cleanup removes temporary objects after their retention period and after active references have cleared.
@@ -96,6 +117,8 @@ Compressed video cannot be safely partitioned by arbitrary byte ranges because f
 - Paths, object keys, uploads, and output metadata are checked for traversal, size, and authorization violations.
 - Logs exclude video contents, credentials, tokens, and presigned URLs.
 - Contributors can see plaintext media assigned to their machines; object authorization does not provide confidentiality from the processing worker.
+- Never commit, print, upload, or expose API keys, bearer tokens, cloud credentials, private keys, webhook secrets, `.env` files, presigned URLs, or customer data.
+- Do not weaken authentication or authorization to make a test pass.
 
 ## Credits and accounting
 
@@ -112,7 +135,7 @@ Compressed video cannot be safely partitioned by arbitrary byte ranges because f
 
 ### Documentation and readability
 
-- Run `gofmt` on every changed Go file.
+- Run `gofmt` on every changed Go file when the repository defines Go tooling.
 - Keep imports organized and let tooling remove unused imports.
 - Place an explanatory comment immediately above every new or modified function and method, including unexported functions.
 - Start function and method comments with the exact function or method name.
@@ -157,26 +180,54 @@ Compressed video cannot be safely partitioned by arbitrary byte ranges because f
 - Test duplicate credit settlement and cleanup protection for referenced objects.
 - Run the race detector for concurrent code.
 
-Expected checks for Go changes:
+Validation commands come from the repository's `go.mod`, CI, and tooling. When those checks are defined, relevant Go changes commonly include formatting, vetting, unit tests, and race detection. Do not invent a Go version, linter, package layout, CI command, or deployment command that the repository has not established.
 
-```text
-gofmt -w <changed-go-files>
-go vet ./...
-go test ./...
-go test -race ./...
-```
+## Dependencies, generated files, and repository changes
+
+- Add a dependency only when it solves a demonstrated need and fits the existing project direction.
+- Explain dependency additions and their operational or security impact in the change description.
+- Do not manually edit generated files when a generator or source definition exists.
+- Update the generator or source definition, then regenerate the affected output.
+- Keep generated changes isolated when practical.
+- Review the complete diff before committing.
+- Keep application code, generated files, and unrelated refactors out of documentation-only changes.
+
+## Project-specific impact checks
+
+Before finalizing a change, consider whether it affects:
+
+- Database schema, transactions, or state-transition invariants.
+- Task claims, leases, heartbeats, retries, attempt fencing, or stale submissions.
+- Worker/API protocol compatibility or authentication.
+- FFmpeg profiles, segmentation boundaries, validation, or media safety limits.
+- Object keys, scoped permissions, retention, cleanup, or active-reference protection.
+- Result acceptance, final assembly, or completion state.
+- Credit eligibility, settlement keys, reversals, or ledger auditability.
+- Metrics, logs, traces, or correlation identifiers.
+
+Behavioral changes in these areas require corresponding tests and documentation updates where applicable.
+
+## Definition of done
+
+A change is ready for review when:
+
+- The implementation and documentation match the current design.
+- The diff is focused and contains no unexplained generated or unrelated changes.
+- Relevant tests and repository-defined checks have been run.
+- Error, cancellation, retry, concurrency, and recovery paths have been considered where applicable.
+- Security-sensitive behavior has been reviewed for accidental disclosure or authorization bypass.
+- Remaining risks, unavailable checks, and untested paths are stated clearly.
 
 ## Change and pull-request rules
 
 - Keep each change focused on its requested behavior.
-- Avoid unrelated refactors and generated files.
+- Avoid unrelated refactors.
 - Preserve existing behavior unless the task explicitly changes it.
 - Update documentation when behavior, interfaces, or architecture changes.
 - Use meaningful conventional commit prefixes such as `docs:`, `chore:`, `fix:`, and `feat:`.
 - Do not add `Co-authored-by` trailers.
-- Review the complete diff before committing.
 - Do not merge pull requests unless explicitly requested.
-- Documentation-only changes do not include application code.
+- Do not bypass required review or CI checks.
 
 ## Open decisions
 
@@ -192,3 +243,5 @@ The following remain policy or product decisions rather than implementation assu
 - Public internet launch timing.
 - Whether users can process their own jobs for credits.
 - PostgreSQL-only scheduling versus a later queue adapter.
+
+Agents must preserve these as explicit decisions and must not silently resolve them during implementation.

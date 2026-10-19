@@ -13,21 +13,6 @@ import (
 )
 
 // TestRoundTrip exercises real MinIO when make test supplies integration settings.
-package storage
-
-import (
-	"bytes"
-	"context"
-	"io"
-	"os"
-	"testing"
-	"time"
-
-	"github.com/minio/minio-go/v7"
-	"github.com/pocketradio/bergen/internal/ports"
-)
-
-// test whether the storage adapter can upload and retrieve a file from MinIO.
 func TestRoundTrip(t *testing.T) {
 	// get MinIO configuration
 	endpoint := os.Getenv("BERGEN_TEST_S3_ENDPOINT")

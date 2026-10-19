@@ -1,0 +1,27 @@
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: bergen
+      POSTGRES_PASSWORD: bergen_local
+      POSTGRES_DB: bergen
+    ports:
+      - "127.0.0.1:5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U bergen -d bergen"]
+      interval: 2s
+      timeout: 2s
+      retries: 20
+  localstack:
+    image: localstack/localstack:3.8.1
+    environment:
+      SERVICES: s3
+      AWS_DEFAULT_REGION: us-east-1
+      EAGER_SERVICE_LOADING: "1"
+    ports:
+      - "127.0.0.1:4566:4566"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fs http://localhost:4566/_localstack/health > /dev/null"]
+      interval: 2s
+      timeout: 2s
+      retries: 20

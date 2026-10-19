@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -29,11 +30,18 @@ func TestMigrate(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	var count int
-	if err := pool.QueryRow(ctx, "SELECT count(*) FROM schema_migrations WHERE version='0001'").Scan(&count); err != nil {
+	files, err := filepath.Glob(filepath.Join(dir, "[0-9][0-9][0-9][0-9]_*.sql"))
+	if err != nil {
 		t.Fatal(err)
 	}
-	if count != 1 {
-		t.Fatalf("migration applied %d times", count)
+	for _, file := range files {
+		version, _, _ := strings.Cut(filepath.Base(file), "_")
+		var count int
+		if err := pool.QueryRow(ctx, "SELECT count(*) FROM schema_migrations WHERE version=$1", version).Scan(&count); err != nil {
+			t.Fatal(err)
+		}
+		if count != 1 {
+			t.Fatalf("migration %s applied %d times, want 1", version, count)
+		}
 	}
 }

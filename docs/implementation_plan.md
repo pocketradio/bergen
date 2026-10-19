@@ -15,9 +15,9 @@
 | HTTP | `net/http` + `chi` |
 | DB access | `pgx` + `sqlc` (type-safe SQL that AI tools generate reliably) |
 | Migrations | `goose` or `golang-migrate` |
-| Object storage | MinIO locally via docker-compose; AWS SDK v2 or `minio-go` behind a `Storage` interface |
+| Object storage | S3-compatible emulator locally via docker-compose; AWS SDK v2 or `minio-go` behind a `Storage` interface |
 | Auth | `golang-jwt` for clients; hashed enrollment and worker tokens |
-| Testing | `testing` + `testify`, `testcontainers-go` (Postgres, MinIO), golden files |
+| Testing | `testing` + `testify`, `testcontainers-go` (Postgres, LocalStack), golden files |
 | Media | `os/exec` wrapping `ffmpeg`/`ffprobe`, behind `Prober` and `Encoder` interfaces |
 | Logs | `log/slog` with correlation IDs |
 
@@ -65,7 +65,7 @@ migrations/     testdata/ (tiny lavfi-generated clips)
 - A test-fixture helper that generates tiny MP4s (H.264/AAC) via ffmpeg `lavfi` sources.
 - A one-page **worker protocol sketch** (endpoints and payloads for poll, heartbeat, submit) so both of you can work in parallel later.
 
-**Done when:** `make test` runs green in CI with a real Postgres container and a trivial storage round-trip test against MinIO.
+**Done when:** `make test` runs green in CI with a real Postgres container and a trivial storage round-trip test against the local S3-compatible emulator.
 
 ---
 

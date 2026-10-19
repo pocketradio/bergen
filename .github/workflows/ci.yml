@@ -1,0 +1,28 @@
+name: Go
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Start integration services
+        run: docker compose up -d --wait
+      - name: Verify formatting
+        run: test -z "$(gofmt -l cmd internal)"
+      - name: Vet
+        run: go vet ./...
+      - name: Lint
+        uses: golangci/golangci-lint-action@v6
+        with:
+          version: v1.64
+      - name: Test (Postgres and S3 emulator)
+        run: make test
+      - name: Race detector
+        run: make test GOFLAGS=-race

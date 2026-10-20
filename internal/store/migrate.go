@@ -33,7 +33,7 @@ func Migrate(ctx context.Context, pool *pgxpool.Pool, dir string) error {
 	}
 	defer conn.Release()
 
-	// Prevent multiple application instances from running migrations at once.
+	// Prevent multiple application instances from running migrations at once by locking session
 	if _, err = conn.Exec(ctx, "SELECT pg_advisory_lock(312089551)"); err != nil {
 		return fmt.Errorf("lock migrations: %w", err)
 	}
@@ -52,6 +52,7 @@ func Migrate(ctx context.Context, pool *pgxpool.Pool, dir string) error {
 
 		var applied bool
 
+		// If migration exists in the database, set applied = true
 		if err = conn.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM schema_migrations WHERE version=$1)`, version).Scan(&applied); err != nil {
 			return fmt.Errorf("check migration %s: %w", version, err)
 		}
@@ -72,11 +73,15 @@ func Migrate(ctx context.Context, pool *pgxpool.Pool, dir string) error {
 			return fmt.Errorf("begin migration %s: %w", version, err)
 		}
 
+		// Execute the migration
+		// Rollback if error
 		if _, err = tx.Exec(ctx, string(body), pgx.QueryExecModeSimpleProtocol); err != nil {
 			_ = tx.Rollback(ctx)
 			return fmt.Errorf("apply migration %s: %w", version, err)
 		}
 
+		// Insert the migration into schema_migrations
+		// Rollback if error
 		if _, err = tx.Exec(ctx, `INSERT INTO schema_migrations(version) VALUES ($1)`, version); err != nil {
 			_ = tx.Rollback(ctx)
 			return fmt.Errorf("record migration %s: %w", version, err)

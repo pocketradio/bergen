@@ -22,8 +22,11 @@ import (
 
 // main runs the server or a one-shot migration, reporting startup errors without secrets.
 func main() {
+	// Check if the command was called with migrate flag
+	// false by default
 	migrate := flag.Bool("migrate", false, "apply database migrations and exit")
 	flag.Parse()
+
 	if err := run(*migrate); err != nil {
 		obs.NewLogger().Error("server stopped", slog.String("error", err.Error()))
 		os.Exit(1)

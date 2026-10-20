@@ -18,22 +18,31 @@ type Client struct {
 
 // New creates a storage adapter; credentials are never returned or logged.
 func New(endpoint, accessKey, secretKey, bucket string, secure bool) (*Client, error) {
+	// create a new minio storage adapter
 	client, err := minio.New(endpoint, &minio.Options{Creds: credentials.NewStaticV4(accessKey, secretKey, ""), Secure: secure})
+
 	if err != nil {
 		return nil, fmt.Errorf("create storage client: %w", err)
 	}
+
 	return &Client{client: client, bucket: bucket}, nil
 }
 
 // EnsureBucket creates the configured bucket when absent; use only in local setup and tests.
 func (c *Client) EnsureBucket(ctx context.Context) error {
+	// Check if the bucket exists
 	exists, err := c.client.BucketExists(ctx, c.bucket)
+
 	if err != nil {
 		return fmt.Errorf("check bucket: %w", err)
 	}
+
+	// Do nothing if it already exists
 	if exists {
 		return nil
 	}
+
+	// Bucket does not exists so we create a new one
 	if err := c.client.MakeBucket(ctx, c.bucket, minio.MakeBucketOptions{}); err != nil {
 		return fmt.Errorf("make bucket: %w", err)
 	}
@@ -45,10 +54,13 @@ func (c *Client) Put(ctx context.Context, key string, body io.Reader, size int64
 	if key == "" || size < 0 {
 		return fmt.Errorf("invalid object key or size")
 	}
+
+	// upload size bytes
 	_, err := c.client.PutObject(ctx, c.bucket, key, body, size, minio.PutObjectOptions{ContentType: "application/octet-stream"})
 	if err != nil {
 		return fmt.Errorf("put object: %w", err)
 	}
+
 	return nil
 }
 
@@ -57,13 +69,18 @@ func (c *Client) Get(ctx context.Context, key string) (io.ReadCloser, error) {
 	if key == "" {
 		return nil, fmt.Errorf("empty object key")
 	}
+
+	// Get our object from the store
 	obj, err := c.client.GetObject(ctx, c.bucket, key, minio.GetObjectOptions{})
 	if err != nil {
 		return nil, fmt.Errorf("get object: %w", err)
 	}
+
+	// Object cleanup if there was an error
 	if _, err := obj.Stat(); err != nil {
 		_ = obj.Close()
 		return nil, fmt.Errorf("stat object: %w", err)
 	}
+
 	return obj, nil
 }

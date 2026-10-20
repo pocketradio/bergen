@@ -15,7 +15,7 @@ The current design references are:
 
 - [`README.md`](README.md): repository entry point.
 - [`docs/architecture.md`](docs/architecture.md): system boundaries and components.
-- [`docs/implementation_plan.md`](docs/implementation_plan.md): phased implementation plan for the system
+- [`docs/plan.md`](docs/plan.md): phased implementation plan for the system
 - [`docs/workflows.md`](docs/workflows.md): operational workflows and lifecycle behavior.
 - [`docs/decisions.md`](docs/decisions.md): recorded design decisions and open questions.
 - [`docs/flows/happy path.md`](docs/flows/happy%20path.md): normal processing flow.

@@ -22,10 +22,14 @@ type Config struct {
 
 // Load validates environment configuration; secrets are never included in errors.
 func Load() (Config, error) {
+	// Check if connection is secure
 	secure, err := strconv.ParseBool(value("BERGEN_S3_SECURE", "false"))
+
 	if err != nil {
 		return Config{}, fmt.Errorf("BERGEN_S3_SECURE: expected boolean: %w", err)
 	}
+
+	// load config from environment
 	c := Config{
 		ListenAddr:    value("BERGEN_LISTEN_ADDR", ":8080"),
 		DatabaseURL:   os.Getenv("BERGEN_DATABASE_URL"),
@@ -36,6 +40,8 @@ func Load() (Config, error) {
 		S3Secure:      secure,
 		MigrationsDir: value("BERGEN_MIGRATIONS_DIR", "migrations"),
 	}
+
+	// Loop over the required env vars and check that they're not empty
 	for _, field := range []struct{ name, value string }{
 		{"BERGEN_DATABASE_URL", c.DatabaseURL}, {"BERGEN_S3_ENDPOINT", c.S3Endpoint},
 		{"BERGEN_S3_ACCESS_KEY", c.S3AccessKey}, {"BERGEN_S3_SECRET_KEY", c.S3SecretKey},

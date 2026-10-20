@@ -18,6 +18,8 @@ type RandomIDGen struct{}
 // NewID returns a random 128-bit hexadecimal identifier or a randomness error.
 func (RandomIDGen) NewID() (string, error) {
 	var b [16]byte
+
+	// Fill b with random bytes
 	if _, err := rand.Read(b[:]); err != nil {
 		return "", fmt.Errorf("generate id: %w", err)
 	}

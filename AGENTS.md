@@ -141,6 +141,7 @@ Compressed video cannot be safely partitioned by arbitrary byte ranges because f
 - Place an explanatory comment immediately above every new or modified function and method, including unexported functions.
 - Start function and method comments with the exact function or method name.
 - Describe behavior, inputs, outputs, side effects, and important failure conditions when relevant.
+- Add concise comments immediately before significant internal code blocks to explain what the block does, using direct, factual language. Do not write suggestive instructions or hypothetical behavior as code comments.
 - Prefer clear names, small functions, focused packages, and explicit control flow.
 - Keep comments useful; do not restate obvious syntax.
 

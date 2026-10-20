@@ -18,15 +18,18 @@ import (
 // Migrate applies pending database migrations in order.
 // It records completed migrations and prevents concurrent migration runs.
 func Migrate(ctx context.Context, pool *pgxpool.Pool, dir string) error {
+	// get our NNNN.sql migration files from dir
 	files, err := filepath.Glob(filepath.Join(dir, "[0-9][0-9][0-9][0-9]_*.sql"))
 	if err != nil {
 		return fmt.Errorf("list migrations: %w", err)
 	}
 
+	// no migrations found
 	if len(files) == 0 {
 		return fmt.Errorf("no migrations in %s", dir)
 	}
 
+	// get a connection from the pool
 	conn, err := pool.Acquire(ctx)
 	if err != nil {
 		return fmt.Errorf("acquire migration connection: %w", err)
@@ -38,6 +41,7 @@ func Migrate(ctx context.Context, pool *pgxpool.Pool, dir string) error {
 		return fmt.Errorf("lock migrations: %w", err)
 	}
 
+	// unlock the lock after we're done
 	defer func() {
 		_, _ = conn.Exec(context.Background(), "SELECT pg_advisory_unlock(312089551)")
 	}()
@@ -47,6 +51,7 @@ func Migrate(ctx context.Context, pool *pgxpool.Pool, dir string) error {
 		return fmt.Errorf("init migrations: %w", err)
 	}
 
+	// iterate over the migration files
 	for _, file := range files {
 		version, _, _ := strings.Cut(filepath.Base(file), "_")
 
@@ -87,6 +92,7 @@ func Migrate(ctx context.Context, pool *pgxpool.Pool, dir string) error {
 			return fmt.Errorf("record migration %s: %w", version, err)
 		}
 
+		// Commit our changes
 		if err = tx.Commit(ctx); err != nil {
 			return fmt.Errorf("commit migration %s: %w", version, err)
 		}

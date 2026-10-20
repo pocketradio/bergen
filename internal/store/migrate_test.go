@@ -18,6 +18,8 @@ func TestMigrate(t *testing.T) {
 		t.Skip("set BERGEN_TEST_DATABASE_URL for PostgreSQL integration")
 	}
 
+	// Acquire a context
+	// timeout the context after 15s to prevent hanging indefinitely
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 

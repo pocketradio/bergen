@@ -30,7 +30,7 @@ Each phase's acceptance criteria are its review boundary. Tests for that phase a
 
 ### Phase 1.5 : Contract hardening and integration boundary
 
-**Scope:** Complete the reviewable contract package required by later feature phases without implementing persistence, handlers, storage adapters, or coordinator workflows. Define state-machine tables and transactional guards for jobs, tasks, attempts, results, and objects; versioned client wire and error contracts; typed output-profile schema and versioning; idempotency scope, canonical fingerprints, replay/conflict behavior; client/worker/task/attempt/object ownership; storage version binding and controlled promotion; and retry classifications with validation-lease interaction rules.
+**Scope:** Complete the reviewable contract package required by later feature phases without implementing persistence, handlers, storage adapters, or coordinator workflows. Define state-machine tables and transactional guards for jobs, tasks, attempts, results, and objects; versioned client wire and error contracts; typed output-profile schema and versioning; idempotency scope, canonical fingerprints, replay/conflict behavior; client/worker/task/attempt/object ownership; storage version binding and controlled promotion; and retry classifications with validation-lease interaction rules. `docs/contracts.md` is the authoritative Phase 1.5 contract document.
 
 **Prerequisite:** Phase 1. This phase is the required contract gate before Phase 2 and before any later phase is accepted against a fake boundary.
 

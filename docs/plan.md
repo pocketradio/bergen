@@ -8,7 +8,7 @@ The MVP uses the repository's existing Go 1.23 toolchain, standard:library `net/
 
 ## Phase execution model
 
-Phase numbers identify the order of integration, not an exclusive work schedule. Each phase lists its implementation prerequisites and the work that can begin concurrently. After Phase 1 contracts are agreed, independent phases may be assigned and developed in parallel against fakes, fixtures, and those contracts. A listed integration prerequisite is required before end:to:end use, but does not prevent isolated implementation. Shared schemas, interfaces, and protocol changes require coordinated ownership to avoid conflicting edits.
+Phase numbers identify the order of integration, not an exclusive work schedule. Each phase lists its implementation prerequisites and the work that can begin concurrently. After Phase 1 contracts are agreed, independent components may be developed in parallel against fakes and fixtures, but a phase cannot be accepted against fakes when its feature requires durable state. A listed integration prerequisite is required before end:to:end use, but does not prevent isolated implementation. Shared schemas, interfaces, and protocol changes require coordinated ownership to avoid conflicting edits.
 
 Each phase's acceptance criteria are its review boundary. Tests for that phase are included in its acceptance criteria; testing is not deferred to one final test phase.
 
@@ -22,51 +22,51 @@ Each phase's acceptance criteria are its review boundary. Tests for that phase a
 
 ### Phase 1 : Shared domain and wire contracts
 
-**Scope:** Confirm IDs, job/task/attempt/result states, object:reference ownership, client and worker request/response payloads, and storage operations required by MVP. Align `docs/worker_protocol.md` with these contracts. Assign ownership for schema and shared:interface changes.
+**Scope:** Define IDs, job/task/attempt/result states, object-reference ownership and lifecycle, versioned client and worker request/response payloads, typed output profiles, idempotency semantics, storage version binding, retry classifications, and the storage operations required by the MVP. Align `docs/worker_protocol.md` with these contracts. Assign ownership for schema and shared-interface changes.
 
 **Prerequisite:** Phase 0.
 
-**Acceptance:** The contracts identify required fields and state transitions without choosing unresolved product policies. Contract tests or fixtures capture worker request/response shapes.
+**Acceptance:** A reviewable contract package contains state-machine tables, allowed transitions, transactional guards, terminal states, versioned wire and error contracts, ownership rules, profile versioning, idempotency replay/conflict semantics, object version/immutability rules, and retry/lease interaction rules. Contract tests or fixtures capture worker request/response shapes without silently choosing unresolved product policies.
 
 ### Phase 2 : Client authentication and authorization
 
-**Scope:** Client credential verification, JWT validation, and authorization middleware for user:owned resources. Record local token issuance/bootstrap behavior before exposing a login flow.
+**Scope:** Persist users, client credentials, and authentication-related records; implement credential verification, JWT validation, and authorization middleware for user-owned resources. Record local token issuance/bootstrap behavior before exposing a login flow.
 
-**Prerequisite:** Phase 1. Middleware can be developed and tested with fixed test tokens while token issuance policy is recorded.
+**Prerequisite:** Phase 1. Middleware can be developed and tested with fixed test tokens, but phase acceptance requires the agreed PostgreSQL persistence and credential boundary.
 
 **Acceptance:** Tests cover missing, invalid, expired, and valid credentials and cross:user resource access.
 
 ### Phase 3 : Job creation and idempotency
 
-**Scope:** Persist a job and its requested server:supported output profile; support safe repeated creation using an idempotency key. Do not implement upload handling in this phase.
+**Scope:** Persist a job, the server-selected versioned output profile, and an authenticated-user-scoped idempotency record. Compare a canonical request fingerprint, return the original job for an identical replay, and return a conflict for the same key with a different payload. Do not implement upload handling in this phase.
 
-**Prerequisite:** Phase 1. Service and HTTP behavior can be built against a fake repository; PostgreSQL integration requires the agreed job schema.
+**Prerequisite:** Phases 1 and 2. Service and HTTP behavior can be built against a fake repository, but acceptance requires the agreed PostgreSQL job, profile-version, idempotency, and uniqueness constraints.
 
-**Acceptance:** Tests cover valid creation, invalid settings, duplicate idempotency keys, and user ownership.
+**Acceptance:** PostgreSQL-backed tests cover valid creation, invalid settings, identical replay, conflicting replay, authenticated-user scoping, profile-version persistence, and duplicate-key protection.
 
 ### Phase 4 : Input object storage operations
 
-**Scope:** Implement the storage adapter operations needed to create scoped upload permissions and inspect/read objects. Keep interfaces consumer:owned and limited to required operations.
+**Scope:** Implement consumer-owned storage operations for scoped upload permissions, object inspection/read, storage version identity, and conditional/version-bound copy or promotion. Keep interfaces limited to required operations.
 
 **Prerequisite:** Phase 1. Adapter work can proceed independently of API and job code.
 
-**Acceptance:** Local S3:compatible integration tests cover scoped upload access, object inspection/read, and error handling.
+**Acceptance:** Local S3-compatible integration tests cover scoped upload access, object inspection/read, version identity, conditional/version-bound operations, and error handling. Object lifecycle records are part of the persistence boundary before cleanup work begins.
 
 ### Phase 5 : Upload URL issuance
 
-**Scope:** Create a server:generated input object key and return a short:lived upload URL for an authorized job owner.
+**Scope:** Create a server-generated input object key, durable object-provenance record, and short-lived upload URL for an authorized job owner. Repeated URL issuance must reuse the assigned key or explicitly invalidate the previous assignment.
 
-**Prerequisite:** Phases 3 and 4 contracts. Handler tests can use fake job and storage adapters before integration.
+**Prerequisite:** Phases 3 and 4 contracts. Handler tests can use fake job and storage adapters before integration, but acceptance requires durable object records and the selected key/version semantics.
 
 **Acceptance:** Tests verify authorization, key ownership, URL scope/expiry behavior, and that the API does not proxy video bytes.
 
 ### Phase 6 : Upload finalization and input integrity
 
-**Scope:** Accept upload finalization metadata, verify the server:assigned object exists, check actual size and SHA:256 against the client claim, and transition the job to uploaded. Make repeated finalization safe.
+**Scope:** Accept upload finalization metadata, verify the server-assigned object exists, bind the exact storage version/reference, check actual size and SHA-256 against the client claim, and transition the job to `uploaded` and `inspection_pending`. Make repeated identical finalization safe and conflicting finalization a conflict. Finalization records durable work and never holds a database transaction while downloading media or running FFprobe.
 
 **Prerequisite:** Phase 5 integration; implementation can use the Phase 1 object:reference contract.
 
-**Acceptance:** Tests cover missing object, wrong key, size/checksum mismatch, duplicate finalize, and successful state transition.
+**Acceptance:** Tests cover missing object, wrong key, size/checksum mismatch, version binding, duplicate identical finalize, conflicting finalize, and the durable transition to `inspection_pending`.
 
 ### Phase 7 : FFprobe execution and metadata parsing
 
@@ -86,19 +86,26 @@ Each phase's acceptance criteria are its review boundary. Tests for that phase a
 
 ### Phase 9 : Whole:file task planning
 
-**Scope:** For an accepted input, produce exactly one pending whole:file task. No segmentation or multi:worker planning is included.
+**Scope:** For an accepted input, produce exactly one pending whole-file task. No segmentation or multi-worker planning is included. Planning is invoked by the durable intake workflow rather than directly inside upload finalization.
 
-**Prerequisite:** Phase 1 task contract. Planner behavior can be tested with synthetic metadata; persistence integration follows Phase 10.
+**Prerequisite:** Phase 1 task contract. Planner behavior can be tested with synthetic metadata; persistence integration is completed through Phase 10.
 
-**Acceptance:** Tests prove one task is created for eligible media and no task is created for rejected media.
+**Acceptance:** Tests prove one task is created for eligible media, no task is created for rejected media, and repeated planning cannot create a second task.
 
-### Phase 10 : Job, media, and task persistence
+### Phase 10 : Durable intake orchestration and media/task persistence
 
-**Scope:** Persist job state transitions, inspected media metadata, and the whole:file task using the existing migration runner and pgx.
+**Scope:** Persist inspection work, inspected media metadata, job state transitions, object references, and the whole-file task using the existing migration runner and pgx. Implement the restart-safe coordinator workflow:
 
-**Prerequisite:** Phases 3, 7, 8, and 9 contracts. Migration ownership and numbering must be coordinated; repository tests can use the existing PostgreSQL service.
+```text
+uploaded → inspection_pending → inspecting → task_pending → planned
+                                      ↘ rejected / inspection_failed
+```
 
-**Acceptance:** PostgreSQL integration tests cover transaction behavior, constraints, and valid/invalid state transitions.
+The coordinator claims pending work, performs FFprobe and planning outside database transactions, records bounded retry state and safe user-visible errors, and resumes from PostgreSQL after restart.
+
+**Prerequisite:** Phases 3, 4, 6, 7, 8, and 9 contracts. Migration ownership and numbering must be coordinated; repository tests must use the existing PostgreSQL service for acceptance.
+
+**Acceptance:** PostgreSQL integration tests cover durable inspection dispatch, coordinator claims, restart recovery, bounded retry/terminal failure, transaction boundaries, constraints, valid/invalid state transitions, exact object-version binding, and creation of exactly one persisted whole-file task.
 
 ### Phase 11 : Worker enrollment and authentication
 
@@ -142,49 +149,49 @@ Each phase's acceptance criteria are its review boundary. Tests for that phase a
 
 ### Phase 16 : Worker heartbeat and lease renewal
 
-**Scope:** Renew a lease only for the authenticated worker's current, unexpired attempt. The API determines renewal duration; the worker cannot submit timestamps or lease values.
+**Scope:** Renew the execution lease only for the authenticated worker's current, unexpired `leased` attempt. The API determines renewal duration; the worker cannot submit timestamps or lease values. A submitted attempt moves out of worker-renewable execution and into coordinator-owned validation.
 
 Initial trial configuration: heartbeat about every 20 seconds; lease duration near twice the estimated task duration plus two minutes of network grace; maximum three attempts. Keep these values configurable and provisional until measured and recorded in `docs/decisions.md`.
 
 **Prerequisite:** Phase 13 attempt contract. Worker and coordinator portions can be developed separately against the protocol.
 
-**Acceptance:** Tests cover valid renewal, wrong worker, stale attempt, expired attempt, and concurrent renewal/reassignment.
+**Acceptance:** Tests cover valid renewal, wrong worker, stale attempt, expired attempt, submitted-attempt rejection, and concurrent renewal/reassignment.
 
 ### Phase 17 : Lease expiry and bounded retry
 
-**Scope:** Identify expired attempts, fence them from later writes, requeue eligible tasks, count attempts, and mark tasks terminal after the configured retry limit.
+**Scope:** Identify expired `leased` attempts, fence them from later writes, requeue eligible tasks, count attempts, and mark tasks terminal after the configured retry limit. Do not immediately reclaim `submitted` or `validating` attempts. Invalid output and validation timeout use explicit bounded retry transitions.
 
 **Prerequisite:** Phases 13 and 16 state:transition contract. Reaper logic can be tested with an injected clock independently of worker execution.
 
-**Acceptance:** Deterministic PostgreSQL tests cover expiry, reassignment, retry bounds, and coordinator restart recovery.
+**Acceptance:** Deterministic PostgreSQL tests cover execution expiry, validation lease expiry, reassignment, retry bounds, stale-write fencing, invalid-output classification, and coordinator restart recovery.
 
 ### Phase 18 : Result submission endpoint
 
-**Scope:** Accept attempt ID and result metadata from an authenticated worker, record submission idempotently, and enqueue/invoke validation. Submission alone does not accept work or award credits.
+**Scope:** Accept attempt ID and result metadata from an authenticated worker, record an idempotent submission, and move the current attempt from `leased` to `submitted` and then to `validating` under a bounded coordinator-owned validation lease. Submission alone does not accept work or award credits. Identical replays return the recorded submission; conflicting payloads return a conflict.
 
 **Prerequisite:** Phases 1, 11, and 13 contracts. Handler implementation can use a fake validator and repository.
 
-**Acceptance:** Tests cover malformed metadata, duplicate identical submission, conflicting duplicate submission, wrong worker, and stale attempt.
+**Acceptance:** Tests cover malformed metadata, duplicate identical submission, conflicting duplicate submission, wrong worker, stale attempt, lease ownership transfer, and worker renewal rejection after submission.
 
 ### Phase 19 : Result attempt and object:key authorization
 
-**Scope:** Verify the submitted attempt is current and belongs to the worker/task, and that the submitted key exactly matches the server:assigned key for that attempt.
+**Scope:** Verify the submitted attempt is current and belongs to the worker/task, that the submitted key exactly matches the server-assigned key for that attempt, and that the submission references the exact durable object/version assigned to the attempt.
 
 **Prerequisite:** Phases 13 and 18 contracts. Independent of media:tool validation.
 
-**Acceptance:** Tests reject stale attempts, wrong worker/task, unassigned keys, and attempts to overwrite another result.
+**Acceptance:** Tests reject stale attempts, wrong worker/task, unassigned keys, version mismatches, and attempts to overwrite another result.
 
 ### Phase 20 : Result object integrity verification
 
-**Scope:** Read the assigned result object from storage, verify existence and actual size, recompute SHA:256, and compare with worker:reported metadata.
+**Scope:** Read the assigned result object version from storage, verify existence and actual size, recompute SHA-256, and compare with worker-reported metadata. A checksum is treated as point-in-time byte integrity, not object immutability.
 
-**Prerequisite:** Phases 4, 18, and 19 contracts. Can be tested with fake objects before full worker execution exists.
+**Prerequisite:** Phases 4, 18, and 19 contracts. Can be tested with fake objects before full worker execution exists, but acceptance requires the storage version/reference binding.
 
-**Acceptance:** Tests cover missing, empty, truncated, wrong:size, and checksum:mismatch objects. Checksums are treated as byte:integrity checks, not proof of correct computation.
+**Acceptance:** Tests cover missing, empty, truncated, wrong-size, checksum-mismatch, changed-version, and conditional-read failures. Checksums are treated as byte-integrity checks, not proof of correct computation.
 
 ### Phase 21 : Result metadata and profile validation
 
-**Scope:** Use FFprobe to validate output container, codec, stream counts, encoding profile, duration bounds, and timestamp sanity against the task contract.
+**Scope:** Use FFprobe to validate output container, codecs, stream counts, dimensions, pixel format, frame-rate/VFR policy, H.264 profile/level, bitrate or quality limits, audio sample rate/channels/bitrate, duration bounds, timestamp tolerances, and the versioned encoding profile against the task contract.
 
 **Prerequisite:** Phases 7, 8, and 20 contracts. Can be implemented using generated and malformed fixtures.
 
@@ -200,19 +207,26 @@ Initial trial configuration: heartbeat about every 20 seconds; lease duration ne
 
 ### Phase 23 : Atomic result acceptance and rejection handling
 
-**Scope:** Orchestrate result checks and atomically accept one valid result only if its attempt remains current. Rejected results follow the configured retry state transition; stale results cannot become authoritative.
+**Scope:** Orchestrate result checks and atomically accept one valid result only if its attempt remains current and its validation lease is still owned by the coordinator. Use `leased → submitted → validating → accepted|rejected`; stale results cannot become authoritative. Validation timeout, malformed metadata, integrity failure, invalid media, and infrastructure failure each follow an explicit retry or terminal classification.
 
 **Prerequisite:** Phases 17:22 contracts. Validator components and transaction logic can be developed concurrently; integration requires all checks.
 
-**Acceptance:** PostgreSQL tests cover concurrent submissions, duplicate requests, lease expiry during validation, competing attempts, and at:most:one accepted result.
+**Acceptance:** PostgreSQL tests cover concurrent submissions, duplicate identical/conflicting requests, lease expiry during validation, validation timeout, competing attempts, stale completion, retry classifications, and at-most-one accepted result.
 
 ### Phase 24 : Final output promotion and validation
 
-**Scope:** For the single:task MVP, make the accepted worker output the job's final output through a recorded promotion/copy operation as required by storage semantics, then validate final:output availability and media before completion.
+**Scope:** For the single-task MVP, use the recorded exact validated object version to drive a recoverable promotion state machine:
+
+```text
+promotion_pending → promoted
+                  ↘ promotion_failed
+```
+
+Use conditional/version-bound copy or promotion as required by storage semantics, then validate final-output availability and media before completion. A later overwrite must never be promoted accidentally.
 
 **Prerequisite:** Phase 23 acceptance contract. Can be implemented against fake accepted results and storage.
 
-**Acceptance:** Tests prevent completion before accepted result and successful final:output validation; copy/promotion retries are idempotent.
+**Acceptance:** Tests prevent completion before accepted result and successful final-output validation, reject changed source versions, and prove promotion retries are idempotent and recoverable.
 
 ### Phase 25 : Job completion state transition
 
@@ -256,11 +270,11 @@ Initial trial configuration: heartbeat about every 20 seconds; lease duration ne
 
 ### Phase 30 : Cleanup eligibility and reference protection
 
-**Scope:** Select expired temporary:object records and prove they are not referenced by active tasks, attempts, validation, retries, assembly, or retention requirements.
+**Scope:** Select expired temporary-object records and prove they are not referenced by active tasks, attempts, validation, retries, assembly, promotion, or retention requirements. Every candidate must have durable provenance, role, owner, expected integrity/version, retention, and deletion state; bucket listing alone is not sufficient.
 
-**Prerequisite:** Phase 1 object lifecycle contract. Can proceed independently against fake repositories.
+**Prerequisite:** Phases 1, 4, 6, and 10 object lifecycle/persistence contracts. Can proceed independently against fake repositories, but acceptance requires durable lifecycle records.
 
-**Acceptance:** Tests prove active and retained objects are excluded from cleanup candidates.
+**Acceptance:** Tests prove active, referenced, version-bound, promoted, and retained objects are excluded from cleanup candidates.
 
 ### Phase 31 : Object deletion and cleanup retry
 
@@ -272,11 +286,11 @@ Initial trial configuration: heartbeat about every 20 seconds; lease duration ne
 
 ### Phase 32 : Storage/database reconciliation
 
-**Scope:** Detect missing referenced objects and unreferenced stored objects; record recoverable discrepancies for safe repair or operator review.
+**Scope:** Detect missing referenced objects and unreferenced stored objects using durable object records, reserved server-generated prefixes, and storage version references; record recoverable discrepancies for safe repair or operator review.
 
-**Prerequisite:** Phases 10, 20, 24, and 30 object/state contracts. Scanner logic can be developed against fakes before cleanup integration.
+**Prerequisite:** Phases 4, 6, 10, 20, 24, and 30 object/state contracts. Scanner logic can be developed against fakes before cleanup integration.
 
-**Acceptance:** Tests identify each discrepancy type without deleting active or unclassified objects.
+**Acceptance:** Tests identify missing, changed-version, and unreferenced-object discrepancies without deleting active, referenced, version-bound, or unclassified objects.
 
 ### Phase 33 : HTTP request deadlines and upload limits
 
@@ -304,11 +318,11 @@ Initial trial configuration: heartbeat about every 20 seconds; lease duration ne
 
 ### Phase 36 : Coordinator restart recovery
 
-**Scope:** Verify that in:flight jobs, task ownership, attempts, and cleanup work recover from PostgreSQL state after coordinator restart; no correctness:critical state depends on memory.
+**Scope:** Verify that inspection/planning intake, in-flight jobs, task ownership, attempts, validation leases, promotion work, and cleanup work recover from PostgreSQL state after coordinator restart; no correctness-critical state depends on memory.
 
-**Prerequisite:** Phases 10, 13, 17, 23, 25, and 30 state contracts. Recovery tests can be developed alongside those packages.
+**Prerequisite:** Phases 10, 13, 17, 23, 24, 25, and 30 state contracts. Recovery tests can be developed alongside those packages.
 
-**Acceptance:** Restart tests resume or safely retry in:flight work without losing ownership or accepting stale results.
+**Acceptance:** Restart tests resume or safely retry intake, validation, promotion, cleanup, and in-flight work without losing ownership or accepting stale results.
 
 ### Phase 37 : Database invariant checks
 
@@ -348,7 +362,7 @@ Initial trial configuration: heartbeat about every 20 seconds; lease duration ne
 
 **Scope:** Execute an assigned segment range and produce output conforming to the selected overlap/trim contract.
 
-**Prerequisite:** Phases 15 and 37 contracts. Worker changes can use synthetic segment tasks before multi:worker scheduling is integrated.
+**Prerequisite:** Phases 15, 37, and 40 contracts. Worker changes can use synthetic segment tasks before multi-worker scheduling is integrated.
 
 **Acceptance:** Segment fixture tests validate requested ranges, overlap handling, and output metadata.
 
@@ -364,7 +378,7 @@ Initial trial configuration: heartbeat about every 20 seconds; lease duration ne
 
 **Scope:** Assemble accepted segment outputs in timeline order and apply the Phase 39 audio:boundary decision.
 
-**Prerequisite:** Phases 37:39 and the selected audio strategy.
+**Prerequisite:** Phases 40, 41, and 42, plus the selected audio strategy. Assembly depends on segment planning, segment execution, and accepted multi-task results.
 
 **Acceptance:** Tests cover out:of:order completion, missing/duplicate segments, duration, timestamps, stream continuity, and A/V synchronization.
 
@@ -375,6 +389,16 @@ Initial trial configuration: heartbeat about every 20 seconds; lease duration ne
 **Prerequisite:** Phase 43.
 
 **Acceptance:** Benchmark results are documented and used to decide supported thresholds and fallback behavior.
+
+## Fixed correctness gates
+
+The following workflow rules are part of the MVP contract and are not optional implementation choices:
+
+- Upload finalization records `inspection_pending` and returns without running FFprobe inside the request transaction.
+- A coordinator-owned bounded validation lease follows worker execution and is not renewable by the worker.
+- Object validation records the exact storage version/reference; promotion is conditional and recoverable.
+- Identical idempotent replays return the original result; conflicting payloads return a conflict.
+- Object lifecycle records are authoritative for cleanup and reconciliation.
 
 ## Policy decisions and phase gates
 

@@ -209,6 +209,18 @@ Before finalizing a change, consider whether it affects:
 
 Behavioral changes in these areas require corresponding tests and documentation updates where applicable.
 
+### Planning and phase-acceptance gates
+
+- Do not accept a phase against fakes when the feature requires durable state. Fakes may support isolated development, but acceptance must include the repository's real persistence boundary.
+- Long-running inspection, planning, validation, promotion, and cleanup work must be represented by durable database state and recoverable after coordinator restart.
+- Upload finalization must not hold a database transaction while downloading media or running FFprobe. Finalization records durable work and dispatches it to a restart-safe coordinator workflow.
+- Attempt and result acceptance must define the current-attempt fence, lease owner, validation timeout, stale-attempt behavior, and retry classification before implementation begins.
+- A checksum proves bytes observed at a point in time; it does not make an object key immutable. Validated objects must be bound to a storage version or a server-controlled immutable copy, and promotion must preserve that binding.
+- Idempotency must distinguish an identical replay from a conflicting payload. Scope, canonical request identity, uniqueness constraints, and replay responses must be durable rather than handler-local.
+- Object provenance and lifecycle records must exist before cleanup or reconciliation is implemented. Bucket listing alone is not an ownership or liveness record.
+- Phase dependencies must name the phases that produce the contracts and durable records actually consumed by later work.
+- Phase 1 acceptance requires a reviewable contract package covering state machines, transactional guards, terminal states, versioned wire contracts, ownership, profile versioning, idempotency, object integrity, and retry/lease interaction rules.
+
 ## Definition of done
 
 A change is ready for review when:
@@ -218,6 +230,9 @@ A change is ready for review when:
 - Relevant tests and repository-defined checks have been run.
 - Error, cancellation, retry, concurrency, and recovery paths have been considered where applicable.
 - Security-sensitive behavior has been reviewed for accidental disclosure or authorization bypass.
+- Required persistence exists before a persistence-dependent phase is accepted; isolated fakes do not replace the required integration boundary.
+- Long-running workflows, object versions, idempotency behavior, and lease/fencing rules are durable and restart-safe where applicable.
+- Phase dependencies and acceptance criteria identify the actual producer contracts and records used by the change.
 - Remaining risks, unavailable checks, and untested paths are stated clearly.
 
 ## Change and pull-request rules

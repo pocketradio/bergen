@@ -15,7 +15,7 @@ The current design references are:
 
 - [`README.md`](README.md): repository entry point.
 - [`docs/architecture.md`](docs/architecture.md): system boundaries and components.
-- [`docs/implementation_plan.md`](docs/implementation_plan.md): phased implementation plan for the system
+- [`docs/plan.md`](docs/plan.md): phased implementation plan for the system
 - [`docs/workflows.md`](docs/workflows.md): operational workflows and lifecycle behavior.
 - [`docs/decisions.md`](docs/decisions.md): recorded design decisions and open questions.
 - [`docs/flows/happy path.md`](docs/flows/happy%20path.md): normal processing flow.
@@ -141,6 +141,7 @@ Compressed video cannot be safely partitioned by arbitrary byte ranges because f
 - Place an explanatory comment immediately above every new or modified function and method, including unexported functions.
 - Start function and method comments with the exact function or method name.
 - Describe behavior, inputs, outputs, side effects, and important failure conditions when relevant.
+- Add concise comments immediately before significant internal code blocks to explain what the block does, using direct, factual language. Do not write suggestive instructions or hypothetical behavior as code comments.
 - Prefer clear names, small functions, focused packages, and explicit control flow.
 - Keep comments useful; do not restate obvious syntax.
 
@@ -208,6 +209,18 @@ Before finalizing a change, consider whether it affects:
 
 Behavioral changes in these areas require corresponding tests and documentation updates where applicable.
 
+### Planning and phase-acceptance gates
+
+- Do not accept a phase against fakes when the feature requires durable state. Fakes may support isolated development, but acceptance must include the repository's real persistence boundary.
+- Long-running inspection, planning, validation, promotion, and cleanup work must be represented by durable database state and recoverable after coordinator restart.
+- Upload finalization must not hold a database transaction while downloading media or running FFprobe. Finalization records durable work and dispatches it to a restart-safe coordinator workflow.
+- Attempt and result acceptance must define the current-attempt fence, lease owner, validation timeout, stale-attempt behavior, and retry classification before implementation begins.
+- A checksum proves bytes observed at a point in time; it does not make an object key immutable. Validated objects must be bound to a storage version or a server-controlled immutable copy, and promotion must preserve that binding.
+- Idempotency must distinguish an identical replay from a conflicting payload. Scope, canonical request identity, uniqueness constraints, and replay responses must be durable rather than handler-local.
+- Object provenance and lifecycle records must exist before cleanup or reconciliation is implemented. Bucket listing alone is not an ownership or liveness record.
+- Phase dependencies must name the phases that produce the contracts and durable records actually consumed by later work.
+- Phase 1 acceptance covers the baseline shared domain and worker wire contracts. The follow-up contract-hardening phase must produce the reviewable package covering state machines, transactional guards, terminal states, versioned wire contracts, ownership, profile versioning, idempotency, object integrity, and retry/lease interaction rules before dependent feature phases are accepted.
+
 ## Definition of done
 
 A change is ready for review when:
@@ -217,6 +230,9 @@ A change is ready for review when:
 - Relevant tests and repository-defined checks have been run.
 - Error, cancellation, retry, concurrency, and recovery paths have been considered where applicable.
 - Security-sensitive behavior has been reviewed for accidental disclosure or authorization bypass.
+- Required persistence exists before a persistence-dependent phase is accepted; isolated fakes do not replace the required integration boundary.
+- Long-running workflows, object versions, idempotency behavior, and lease/fencing rules are durable and restart-safe where applicable.
+- Phase dependencies and acceptance criteria identify the actual producer contracts and records used by the change.
 - Remaining risks, unavailable checks, and untested paths are stated clearly.
 
 ## Change and pull-request rules

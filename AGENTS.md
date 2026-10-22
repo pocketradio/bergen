@@ -242,6 +242,8 @@ A change is ready for review when:
 - Preserve existing behavior unless the task explicitly changes it.
 - Update documentation when behavior, interfaces, or architecture changes.
 - Use meaningful conventional commit prefixes such as `docs:`, `chore:`, `fix:`, and `feat:`.
+- Organize work into atomic commits. After relevant validation passes, commit each self-contained logical unit of change separately; do not combine unrelated units in one commit. Each commit message must include a brief description of the change and its purpose.
+- Never commit directly to `main`. Before making the first commit, inspect the current branch. If it is `main`, create and switch to a new descriptively named feature branch before committing.
 - Do not add `Co-authored-by` trailers.
 - Do not merge pull requests unless explicitly requested.
 - Do not bypass required review or CI checks.

@@ -5,6 +5,7 @@ import (
 
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -49,7 +50,7 @@ func TestTinyMP4(t *testing.T) {
 	}
 
 	// Throw an error if the file was not h264/aac
-	if got := string(out); got != "h264\naac\n" {
+	if got := strings.ReplaceAll(string(out), "\r\n", "\n"); got != "h264\naac\n" {
 		t.Fatalf("unexpected codecs: %q", got)
 	}
 }

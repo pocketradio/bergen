@@ -135,7 +135,7 @@ The coordinator claims pending work, performs FFprobe and planning outside datab
 
 **Scope:** Claim one eligible task transactionally, create a fresh attempt ID and lease, and set a unique server:generated output key for that attempt. Return task settings and task:scoped storage permissions.
 
-**Prerequisite:** Phases 1, 10, and 11 contracts. Can be implemented and concurrency:tested before worker polling is integrated.
+**Prerequisite:** Phases 1.5, 10, and 11 contracts. Can be implemented and concurrency:tested before worker polling is integrated.
 
 **Acceptance:** PostgreSQL tests prove concurrent pollers cannot claim the same task and each assignment has a unique attempt and output key.
 
@@ -177,7 +177,7 @@ Initial trial configuration: heartbeat about every 20 seconds; lease duration ne
 
 **Scope:** Accept attempt ID and result metadata from an authenticated worker, record an idempotent submission, and move the current attempt from `leased` to `submitted` and then to `validating` under a bounded coordinator-owned validation lease. Submission alone does not accept work or award credits. Identical replays return the recorded submission; conflicting payloads return a conflict.
 
-**Prerequisite:** Phases 1, 11, and 13 contracts. Handler implementation can use a fake validator and repository.
+**Prerequisite:** Phases 1.5, 11, and 13 contracts. Handler implementation can use a fake validator and repository.
 
 **Acceptance:** Tests cover malformed metadata, duplicate identical submission, conflicting duplicate submission, wrong worker, stale attempt, lease ownership transfer, and worker renewal rejection after submission.
 
@@ -280,7 +280,7 @@ Use conditional/version-bound copy or promotion as required by storage semantics
 
 **Scope:** Select expired temporary-object records and prove they are not referenced by active tasks, attempts, validation, retries, assembly, promotion, or retention requirements. Every candidate must have durable provenance, role, owner, expected integrity/version, retention, and deletion state; bucket listing alone is not sufficient.
 
-**Prerequisite:** Phases 1, 4, 6, and 10 object lifecycle/persistence contracts. Can proceed independently against fake repositories, but acceptance requires durable lifecycle records.
+**Prerequisite:** Phases 1.5, 4, 6, and 10 object lifecycle/persistence contracts. Can proceed independently against fake repositories, but acceptance requires durable lifecycle records.
 
 **Acceptance:** Tests prove active, referenced, version-bound, promoted, and retained objects are excluded from cleanup candidates.
 

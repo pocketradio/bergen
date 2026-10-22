@@ -8,7 +8,7 @@ The MVP uses the repository's existing Go 1.23 toolchain, standard:library `net/
 
 ## Phase execution model
 
-Phase numbers identify the order of integration, not an exclusive work schedule. Each phase lists its implementation prerequisites and the work that can begin concurrently. After Phase 1 contracts are agreed, independent components may be developed in parallel against fakes and fixtures, but a phase cannot be accepted against fakes when its feature requires durable state. A listed integration prerequisite is required before end:to:end use, but does not prevent isolated implementation. Shared schemas, interfaces, and protocol changes require coordinated ownership to avoid conflicting edits.
+Phase numbers identify the order of integration, not an exclusive work schedule. Each phase lists its implementation prerequisites and the work that can begin concurrently. After Phase 1 baseline contracts and Phase 1.5 contract hardening are agreed, independent components may be developed in parallel against fakes and fixtures, but a phase cannot be accepted against fakes when its feature requires durable state. A listed integration prerequisite is required before end:to:end use, but does not prevent isolated implementation. Shared schemas, interfaces, and protocol changes require coordinated ownership to avoid conflicting edits.
 
 Each phase's acceptance criteria are its review boundary. Tests for that phase are included in its acceptance criteria; testing is not deferred to one final test phase.
 
@@ -22,17 +22,25 @@ Each phase's acceptance criteria are its review boundary. Tests for that phase a
 
 ### Phase 1 : Shared domain and wire contracts
 
-**Scope:** Define IDs, job/task/attempt/result states, object-reference ownership and lifecycle, versioned client and worker request/response payloads, typed output profiles, idempotency semantics, storage version binding, retry classifications, and the storage operations required by the MVP. Align `docs/worker_protocol.md` with these contracts. Assign ownership for schema and shared-interface changes.
+**Scope:** Define the baseline IDs, job/task/attempt/result states, object-reference ownership, and worker request/response payloads required by the MVP. Align `docs/worker_protocol.md` with these baseline contracts. Assign ownership for schema and shared-interface changes.
 
 **Prerequisite:** Phase 0.
 
-**Acceptance:** A reviewable contract package contains state-machine tables, allowed transitions, transactional guards, terminal states, versioned wire and error contracts, ownership rules, profile versioning, idempotency replay/conflict semantics, object version/immutability rules, and retry/lease interaction rules. Contract tests or fixtures capture worker request/response shapes without silently choosing unresolved product policies.
+**Acceptance:** The baseline domain and worker contracts identify required fields and legal lifecycle transitions. Contract tests or fixtures capture the implemented worker request/response shapes without silently choosing unresolved product policies.
+
+### Phase 1.5 : Contract hardening and integration boundary
+
+**Scope:** Complete the reviewable contract package required by later feature phases without implementing persistence, handlers, storage adapters, or coordinator workflows. Define state-machine tables and transactional guards for jobs, tasks, attempts, results, and objects; versioned client wire and error contracts; typed output-profile schema and versioning; idempotency scope, canonical fingerprints, replay/conflict behavior; client/worker/task/attempt/object ownership; storage version binding and controlled promotion; and retry classifications with validation-lease interaction rules.
+
+**Prerequisite:** Phase 1. This phase is the required contract gate before Phase 2 and before any later phase is accepted against a fake boundary.
+
+**Acceptance:** The contracts and documentation are internally consistent and reviewable. They specify terminal states, allowed transitions, transactional guards, profile fields, idempotency uniqueness/replay/conflict semantics, object version/immutability behavior, bounded coordinator validation leases, stale-attempt fencing, retry classifications, and the ownership model. No unresolved product policy is silently converted into implementation behavior.
 
 ### Phase 2 : Client authentication and authorization
 
 **Scope:** Persist users, client credentials, and authentication-related records; implement credential verification, JWT validation, and authorization middleware for user-owned resources. Record local token issuance/bootstrap behavior before exposing a login flow.
 
-**Prerequisite:** Phase 1. Middleware can be developed and tested with fixed test tokens, but phase acceptance requires the agreed PostgreSQL persistence and credential boundary.
+**Prerequisite:** Phase 1.5. Middleware can be developed and tested with fixed test tokens, but phase acceptance requires the agreed PostgreSQL persistence and credential boundary.
 
 **Acceptance:** Tests cover missing, invalid, expired, and valid credentials and cross:user resource access.
 
@@ -40,7 +48,7 @@ Each phase's acceptance criteria are its review boundary. Tests for that phase a
 
 **Scope:** Persist a job, the server-selected versioned output profile, and an authenticated-user-scoped idempotency record. Compare a canonical request fingerprint, return the original job for an identical replay, and return a conflict for the same key with a different payload. Do not implement upload handling in this phase.
 
-**Prerequisite:** Phases 1 and 2. Service and HTTP behavior can be built against a fake repository, but acceptance requires the agreed PostgreSQL job, profile-version, idempotency, and uniqueness constraints.
+**Prerequisite:** Phases 1.5 and 2. Service and HTTP behavior can be built against a fake repository, but acceptance requires the agreed PostgreSQL job, profile-version, idempotency, and uniqueness constraints.
 
 **Acceptance:** PostgreSQL-backed tests cover valid creation, invalid settings, identical replay, conflicting replay, authenticated-user scoping, profile-version persistence, and duplicate-key protection.
 
@@ -48,7 +56,7 @@ Each phase's acceptance criteria are its review boundary. Tests for that phase a
 
 **Scope:** Implement consumer-owned storage operations for scoped upload permissions, object inspection/read, storage version identity, and conditional/version-bound copy or promotion. Keep interfaces limited to required operations.
 
-**Prerequisite:** Phase 1. Adapter work can proceed independently of API and job code.
+**Prerequisite:** Phase 1.5. Adapter work can proceed independently of API and job code.
 
 **Acceptance:** Local S3-compatible integration tests cover scoped upload access, object inspection/read, version identity, conditional/version-bound operations, and error handling. Object lifecycle records are part of the persistence boundary before cleanup work begins.
 
@@ -64,7 +72,7 @@ Each phase's acceptance criteria are its review boundary. Tests for that phase a
 
 **Scope:** Accept upload finalization metadata, verify the server-assigned object exists, bind the exact storage version/reference, check actual size and SHA-256 against the client claim, and transition the job to `uploaded` and `inspection_pending`. Make repeated identical finalization safe and conflicting finalization a conflict. Finalization records durable work and never holds a database transaction while downloading media or running FFprobe.
 
-**Prerequisite:** Phase 5 integration; implementation can use the Phase 1 object:reference contract.
+**Prerequisite:** Phase 5 integration; implementation can use the Phase 1.5 object-reference and version-binding contract.
 
 **Acceptance:** Tests cover missing object, wrong key, size/checksum mismatch, version binding, duplicate identical finalize, conflicting finalize, and the durable transition to `inspection_pending`.
 
@@ -72,7 +80,7 @@ Each phase's acceptance criteria are its review boundary. Tests for that phase a
 
 **Scope:** Run FFprobe as a bounded subprocess and parse its output into domain media metadata. This phase does not decide whether metadata is acceptable.
 
-**Prerequisite:** Phase 0 fixture support and Phase 1 media contract. Independent of API/database implementation.
+**Prerequisite:** Phase 0 fixture support and Phase 1.5 media contract. Independent of API/database implementation.
 
 **Acceptance:** Tests cover valid output, malformed output, process errors, timeout, cancellation, and fixture media.
 
@@ -88,7 +96,7 @@ Each phase's acceptance criteria are its review boundary. Tests for that phase a
 
 **Scope:** For an accepted input, produce exactly one pending whole-file task. No segmentation or multi-worker planning is included. Planning is invoked by the durable intake workflow rather than directly inside upload finalization.
 
-**Prerequisite:** Phase 1 task contract. Planner behavior can be tested with synthetic metadata; persistence integration is completed through Phase 10.
+**Prerequisite:** Phase 1.5 task/profile contract. Planner behavior can be tested with synthetic metadata; persistence integration is completed through Phase 10.
 
 **Acceptance:** Tests prove one task is created for eligible media, no task is created for rejected media, and repeated planning cannot create a second task.
 
@@ -111,7 +119,7 @@ The coordinator claims pending work, performs FFprobe and planning outside datab
 
 **Scope:** Enroll a worker using an enrollment token and issue a separate persistent worker credential stored in non:recoverable form. Worker identity is derived from authentication, not request fields.
 
-**Prerequisite:** Phase 1 worker identity contract. Can proceed in parallel with client authentication and job intake.
+**Prerequisite:** Phase 1.5 worker identity contract. Can proceed in parallel with client authentication and job intake after the contract gate is complete.
 
 **Acceptance:** Tests cover enrollment, credential verification, invalid/revoked credentials, and separation from client credentials.
 
@@ -119,7 +127,7 @@ The coordinator claims pending work, performs FFprobe and planning outside datab
 
 **Scope:** Implement worker:side authenticated HTTP calls and decoding for polling, no:work responses, task payloads, and API errors. Use standard `net/http`.
 
-**Prerequisite:** Phase 1 protocol contract. Can be tested against a fake server before coordinator endpoints exist.
+**Prerequisite:** Phase 1.5 protocol contract. Can be tested against a fake server before coordinator endpoints exist.
 
 **Acceptance:** Protocol tests cover valid payloads, malformed responses, authentication failure, cancellation, and retryable errors.
 
@@ -143,7 +151,7 @@ The coordinator claims pending work, performs FFprobe and planning outside datab
 
 **Scope:** Map typed server:defined settings into FFmpeg arguments and run the encoder with process, time, disk, and resource controls. Do not accept arbitrary worker:supplied commands.
 
-**Prerequisite:** Phase 1 task/profile contract and Phase 0 media fixture support. Independent of coordinator implementation.
+**Prerequisite:** Phase 1.5 task/profile contract and Phase 0 media fixture support. Independent of coordinator implementation.
 
 **Acceptance:** Tests cover argument construction, successful encoding, invalid input, timeout, cancellation, and process failure.
 
@@ -240,7 +248,7 @@ Use conditional/version-bound copy or promotion as required by storage semantics
 
 **Scope:** Persist immutable ledger entries with a stable unique settlement key and transactional balance/ledger behavior. Support audit, reversal, and adjustment records as defined by the ledger contract.
 
-**Prerequisite:** Phase 1 ledger contract. Can proceed in parallel with job processing using synthetic accepted contributions.
+**Prerequisite:** Phase 1.5 ledger contract. Can proceed in parallel with job processing using synthetic accepted contributions.
 
 **Acceptance:** PostgreSQL tests prove duplicate settlement cannot create a second normal award and ledger history remains auditable. Do not select or infer the reward formula in this phase.
 
@@ -312,7 +320,7 @@ Use conditional/version-bound copy or promotion as required by storage semantics
 
 **Scope:** Ensure application logs do not expose credentials, tokens, media contents, or presigned URLs. Include correlation identifiers where available.
 
-**Prerequisite:** Logging fields and request/worker contracts from Phase 1.
+**Prerequisite:** Logging fields and request/worker contracts from Phase 1.5.
 
 **Acceptance:** Tests or reviewable log:capture checks prove sensitive values are redacted or omitted.
 
@@ -336,7 +344,7 @@ Use conditional/version-bound copy or promotion as required by storage semantics
 
 **Scope:** Exercise client authentication, job creation, upload/finalize, inspection, task claim, worker encode/upload/submit, validation, acceptance, finalization, status/download, ledger gate, and cleanup.
 
-**Prerequisite:** Integrate completed MVP phases. Test harness work may begin earlier against the Phase 1 contracts and fixtures.
+**Prerequisite:** Integrate completed MVP phases. Test harness work may begin earlier against the Phase 1.5 contracts and fixtures.
 
 **Acceptance:** CI runs an end:to:end path with the repository's PostgreSQL and S3:compatible services and FFmpeg fixture. The test verifies failure and retry cases relevant to the MVP, as well as successful completion.
 

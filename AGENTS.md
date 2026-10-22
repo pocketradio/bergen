@@ -219,7 +219,7 @@ Behavioral changes in these areas require corresponding tests and documentation 
 - Idempotency must distinguish an identical replay from a conflicting payload. Scope, canonical request identity, uniqueness constraints, and replay responses must be durable rather than handler-local.
 - Object provenance and lifecycle records must exist before cleanup or reconciliation is implemented. Bucket listing alone is not an ownership or liveness record.
 - Phase dependencies must name the phases that produce the contracts and durable records actually consumed by later work.
-- Phase 1 acceptance requires a reviewable contract package covering state machines, transactional guards, terminal states, versioned wire contracts, ownership, profile versioning, idempotency, object integrity, and retry/lease interaction rules.
+- Phase 1 acceptance covers the baseline shared domain and worker wire contracts. The follow-up contract-hardening phase must produce the reviewable package covering state machines, transactional guards, terminal states, versioned wire contracts, ownership, profile versioning, idempotency, object integrity, and retry/lease interaction rules before dependent feature phases are accepted.
 
 ## Definition of done
 

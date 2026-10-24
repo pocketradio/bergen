@@ -48,7 +48,7 @@ The provider version may be an S3 version ID, a service-defined immutable-copy i
 
 ## State machines and transactional guards
 
-All transitions below occur in a single database transaction. A successful transition writes the new state and all stated side effects atomically. Implementations use compare-and-set predicates and must treat zero affected rows as a current-state conflict rather than overwriting a newer state. `WorkerAttemptGuard`, `SubmissionAttemptGuard`, `ValidationAttemptGuard`, `ValidationRecoveryGuard`, and `RetryTransitionGuard` define the values later persistence operations must validate before issuing their compare-and-set updates; they do not replace those transactional predicates.
+All transitions below occur in a single database transaction. A successful transition writes the new state and all stated side effects atomically. Implementations use compare-and-set predicates and must treat zero affected rows as a current-state conflict rather than overwriting a newer state. `WorkerAttemptGuard`, `SubmissionAttemptGuard`, `CoordinatorWorkGuard`, `ValidationAttemptGuard`, `ValidationRecoveryGuard`, and `RetryTransitionGuard` define the values later persistence operations must validate before issuing their compare-and-set updates; they do not replace those transactional predicates.
 
 ### Job
 
@@ -71,6 +71,8 @@ All transitions below occur in a single database transaction. A successful trans
 | `promotion_pending` or `promoting` | `promotion_failed` | Promotion reaches a terminal failure after its bounded recovery policy. |
 
 `rejected`, `inspection_failed`, `promotion_failed`, `failed`, `cancelled`, and `completed` are terminal. A transition to a terminal error state records a safe user-visible reason and never removes provenance.
+
+Inspection and planning share one job-owned `intake` claim; promotion uses a `promotion` claim. Each claim records its coordinator, unique fencing token, and expiry. The intake claim is held from `inspection_pending` through `task_pending` until planning completes; the promotion claim is held from `promotion_pending` until completion. Renewal and completion require the current token, matching work kind and coordinator, and an unexpired claim. Recovery atomically replaces an expired claim's token before continuing; a completion using the old token must fail. Clear the claim when its work completes or reaches a terminal outcome. Later persistence phases enforce these checks in the same transaction as each state change.
 
 ### Task, attempt, and result
 
@@ -123,6 +125,8 @@ The exact key length/character policy remains an API input-validation decision. 
 ## Validation leases, fencing, and retries
 
 Attempt creation generates a new `attempt_id`; it is the fencing token. Every worker heartbeat, submission, validation completion, rejection, and acceptance compares its attempt ID to the task's current attempt inside the transaction. Reassignment marks the previous attempt `stale` or `expired` before creating a new one. A stale write returns `stale_attempt` and cannot alter task state, accepted result, final output, or credits.
+
+Validation acceptance compares the result's job, task, worker, and attempt IDs with the authoritative job, task, and current attempt. The result object's job, task, and attempt IDs must match the result. The later acceptance transaction enforces these ownership comparisons with the lease and current-attempt predicates.
 
 When a current worker submits an output, the worker lease is relinquished and the coordinator creates a bounded validation lease. If that lease expires, only coordinator recovery may classify/requeue the task. `ValidationRecoveryGuard` requires the current attempt to be `validating`, the validation lease to be expired, and the attempt to be fenced as `stale` in the same transaction before a retryable transition. It must not immediately reassign a `submitted` or `validating` attempt without fencing it in the same transaction.
 

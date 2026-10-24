@@ -28,10 +28,21 @@ type SubmissionAttemptGuard struct {
 type ValidationAttemptGuard struct {
 	CurrentAttemptID AttemptID
 	AttemptID        AttemptID
+	JobID            JobID
+	TaskID           TaskID
+	WorkerID         WorkerID
 	CoordinatorID    CoordinatorID
 	ValidationLease  ValidationLease
 	AcceptedResultID *ResultID
 	Result           Result
+}
+
+// CoordinatorWorkGuard contains the persisted claim and authenticated coordinator for a job workflow operation.
+type CoordinatorWorkGuard struct {
+	CurrentToken  ID
+	Claim         CoordinatorWorkClaim
+	ExpectedKind  CoordinatorWorkKind
+	CoordinatorID CoordinatorID
 }
 
 // RetryTransitionGuard contains the classified failure and resulting task state.
@@ -55,6 +66,23 @@ type ValidationRecoveryGuard struct {
 func ValidateValidationLease(lease ValidationLease) error {
 	if lease.OwnerID == "" || lease.ExpiresAt.IsZero() {
 		return errors.New("validation lease requires coordinator owner and expiry")
+	}
+	return nil
+}
+
+// ValidateCoordinatorWorkGuard validates ownership and fencing for active job work at now.
+func ValidateCoordinatorWorkGuard(guard CoordinatorWorkGuard, now time.Time) error {
+	if guard.ExpectedKind != CoordinatorWorkIntake && guard.ExpectedKind != CoordinatorWorkPromotion {
+		return errors.New("coordinator work requires a known work kind")
+	}
+	if guard.Claim.Kind != guard.ExpectedKind || guard.Claim.Token == "" || guard.CurrentToken != guard.Claim.Token {
+		return errors.New("coordinator work requires the current claim token and kind")
+	}
+	if guard.CoordinatorID == "" || guard.Claim.OwnerID != guard.CoordinatorID {
+		return errors.New("coordinator work requires the claim-owning coordinator")
+	}
+	if guard.Claim.ExpiresAt.IsZero() || !guard.Claim.ExpiresAt.After(now) {
+		return errors.New("coordinator work requires an unexpired claim")
 	}
 	return nil
 }
@@ -109,6 +137,10 @@ func ValidateValidationAttemptGuard(guard ValidationAttemptGuard, now time.Time)
 	}
 	if guard.AcceptedResultID != nil {
 		return errors.New("validation transition requires no accepted task result")
+	}
+	if guard.JobID == "" || guard.TaskID == "" || guard.WorkerID == "" ||
+		guard.Result.JobID != guard.JobID || guard.Result.TaskID != guard.TaskID || guard.Result.WorkerID != guard.WorkerID {
+		return errors.New("validation result ownership must match the authoritative job, task, and worker")
 	}
 	if guard.Result.AttemptID != guard.AttemptID || guard.Result.State != ResultValidating {
 		return errors.New("validation transition requires the guarded validating result")

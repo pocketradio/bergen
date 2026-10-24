@@ -15,6 +15,9 @@ func TestValidationLeaseGuards(t *testing.T) {
 	guard := ValidationAttemptGuard{
 		CurrentAttemptID: "attempt-1",
 		AttemptID:        "attempt-1",
+		JobID:            "job-1",
+		TaskID:           "task-1",
+		WorkerID:         "worker-1",
 		CoordinatorID:    "coordinator-1",
 		ValidationLease:  ValidationLease{OwnerID: "coordinator-1", ExpiresAt: now.Add(time.Minute)},
 		Result:           result,
@@ -43,6 +46,62 @@ func TestValidationLeaseGuards(t *testing.T) {
 	guard.Result.AttemptID = "attempt-2"
 	if err := ValidateValidationAttemptGuard(guard, now); err == nil {
 		t.Fatal("expected result for another attempt to be rejected")
+	}
+
+	guard.Result = testResult()
+	guard.Result.State = ResultValidating
+	guard.Result.Object.Version = "version-1"
+	tests := []struct {
+		name   string
+		mutate func(*Result)
+	}{
+		{name: "job", mutate: func(result *Result) { result.JobID = "job-2" }},
+		{name: "task", mutate: func(result *Result) { result.TaskID = "task-2" }},
+		{name: "worker", mutate: func(result *Result) { result.WorkerID = "worker-2" }},
+		{name: "object ownership", mutate: func(result *Result) { result.Object.TaskID = "task-2" }},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			invalid := guard
+			invalid.Result = guard.Result
+			test.mutate(&invalid.Result)
+			if err := ValidateValidationAttemptGuard(invalid, now); err == nil {
+				t.Fatalf("expected mismatched %s ownership to be rejected", test.name)
+			}
+		})
+	}
+}
+
+// TestCoordinatorWorkGuard verifies active work requires its current owned, unexpired fencing token.
+func TestCoordinatorWorkGuard(t *testing.T) {
+	now := time.Date(2026, 10, 22, 12, 0, 0, 0, time.UTC)
+	guard := CoordinatorWorkGuard{
+		CurrentToken:  "claim-1",
+		Claim:         CoordinatorWorkClaim{Kind: CoordinatorWorkIntake, OwnerID: "coordinator-1", Token: "claim-1", ExpiresAt: now.Add(time.Minute)},
+		ExpectedKind:  CoordinatorWorkIntake,
+		CoordinatorID: "coordinator-1",
+	}
+	if err := ValidateCoordinatorWorkGuard(guard, now); err != nil {
+		t.Fatal(err)
+	}
+
+	tests := []struct {
+		name   string
+		mutate func(*CoordinatorWorkGuard)
+	}{
+		{name: "wrong kind", mutate: func(guard *CoordinatorWorkGuard) { guard.ExpectedKind = CoordinatorWorkPromotion }},
+		{name: "wrong coordinator", mutate: func(guard *CoordinatorWorkGuard) { guard.CoordinatorID = "coordinator-2" }},
+		{name: "expired claim", mutate: func(guard *CoordinatorWorkGuard) { guard.Claim.ExpiresAt = now }},
+		{name: "replaced token after recovery", mutate: func(guard *CoordinatorWorkGuard) { guard.CurrentToken = "claim-2" }},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			invalid := guard
+			test.mutate(&invalid)
+			if err := ValidateCoordinatorWorkGuard(invalid, now); err == nil {
+				t.Fatalf("expected %s to be rejected", test.name)
+			}
+		})
 	}
 }
 

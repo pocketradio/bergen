@@ -26,16 +26,33 @@ type ValidationLease struct {
 	ExpiresAt time.Time     `json:"expires_at"`
 }
 
+// CoordinatorWorkKind identifies the long-running job workflow held by a coordinator.
+type CoordinatorWorkKind string
+
+const (
+	CoordinatorWorkIntake    CoordinatorWorkKind = "intake"
+	CoordinatorWorkPromotion CoordinatorWorkKind = "promotion"
+)
+
+// CoordinatorWorkClaim fences one coordinator's intake or promotion work for a job.
+type CoordinatorWorkClaim struct {
+	Kind      CoordinatorWorkKind
+	OwnerID   CoordinatorID
+	Token     ID
+	ExpiresAt time.Time
+}
+
 // Job is the durable domain representation of a compression request.
 type Job struct {
-	ID          JobID         `json:"id"`
-	OwnerID     UserID        `json:"owner_id"`
-	State       JobState      `json:"state"`
-	Profile     EncodeProfile `json:"profile"`
-	Input       ObjectRef     `json:"input"`
-	FinalOutput *ObjectRef    `json:"final_output,omitempty"`
-	CreatedAt   time.Time     `json:"created_at"`
-	UpdatedAt   time.Time     `json:"updated_at"`
+	ID              JobID                 `json:"id"`
+	OwnerID         UserID                `json:"owner_id"`
+	State           JobState              `json:"state"`
+	Profile         EncodeProfile         `json:"profile"`
+	Input           ObjectRef             `json:"input"`
+	FinalOutput     *ObjectRef            `json:"final_output,omitempty"`
+	CoordinatorWork *CoordinatorWorkClaim `json:"-"`
+	CreatedAt       time.Time             `json:"created_at"`
+	UpdatedAt       time.Time             `json:"updated_at"`
 }
 
 // Task is a durable unit of processing work belonging to a job.

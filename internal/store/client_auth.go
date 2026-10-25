@@ -88,6 +88,7 @@ func (s *ClientAuthStore) RevokeClientCredential(ctx context.Context, id domain.
 	if id == "" || userID == "" || revokedAt.IsZero() {
 		return errors.New("revoke client credential: credential ID, user ID, and revocation time are required")
 	}
+	// COALESCE keeps revoked_at if already set; otherwise, it uses the supplied time in $3.
 	err := s.pool.QueryRow(ctx, `
 		UPDATE bergen.client_credentials
 		SET revoked_at = COALESCE(revoked_at, $3)

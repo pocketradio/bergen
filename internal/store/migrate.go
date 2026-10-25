@@ -46,8 +46,8 @@ func Migrate(ctx context.Context, pool *pgxpool.Pool, dir string) error {
 		_, _ = conn.Exec(context.Background(), "SELECT pg_advisory_unlock(312089551)")
 	}()
 
-	// Track completed migrations so rerunning the command is safe.
-	if _, err = conn.Exec(ctx, `CREATE TABLE IF NOT EXISTS schema_migrations (version text PRIMARY KEY, applied_at timestamptz NOT NULL DEFAULT now())`); err != nil {
+	// Keep the migration ledger in public so creating the bergen schema cannot shadow it through search_path.
+	if _, err = conn.Exec(ctx, `CREATE TABLE IF NOT EXISTS public.schema_migrations (version text PRIMARY KEY, applied_at timestamptz NOT NULL DEFAULT now())`); err != nil {
 		return fmt.Errorf("init migrations: %w", err)
 	}
 
@@ -58,7 +58,7 @@ func Migrate(ctx context.Context, pool *pgxpool.Pool, dir string) error {
 		var applied bool
 
 		// If migration exists in the database, set applied = true
-		if err = conn.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM schema_migrations WHERE version=$1)`, version).Scan(&applied); err != nil {
+		if err = conn.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM public.schema_migrations WHERE version=$1)`, version).Scan(&applied); err != nil {
 			return fmt.Errorf("check migration %s: %w", version, err)
 		}
 
@@ -85,9 +85,9 @@ func Migrate(ctx context.Context, pool *pgxpool.Pool, dir string) error {
 			return fmt.Errorf("apply migration %s: %w", version, err)
 		}
 
-		// Insert the migration into schema_migrations
+		// Insert the migration into the canonical public ledger.
 		// Rollback if error
-		if _, err = tx.Exec(ctx, `INSERT INTO schema_migrations(version) VALUES ($1)`, version); err != nil {
+		if _, err = tx.Exec(ctx, `INSERT INTO public.schema_migrations(version) VALUES ($1)`, version); err != nil {
 			_ = tx.Rollback(ctx)
 			return fmt.Errorf("record migration %s: %w", version, err)
 		}

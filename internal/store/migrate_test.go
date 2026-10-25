@@ -29,9 +29,9 @@ func TestMigrate(t *testing.T) {
 	}
 	defer pool.Close()
 
-	// Run all the migrations twice to check for idempotency
+	// Run migrations repeatedly after the application schema exists to catch ledger shadowing.
 	dir := filepath.Join("..", "..", "migrations")
-	for range 2 {
+	for range 3 {
 		if err := Migrate(ctx, pool, dir); err != nil {
 			t.Fatal(err)
 		}
@@ -47,7 +47,7 @@ func TestMigrate(t *testing.T) {
 	for _, file := range files {
 		version, _, _ := strings.Cut(filepath.Base(file), "_")
 		var count int
-		if err := pool.QueryRow(ctx, "SELECT count(*) FROM schema_migrations WHERE version=$1", version).Scan(&count); err != nil {
+		if err := pool.QueryRow(ctx, "SELECT count(*) FROM public.schema_migrations WHERE version=$1", version).Scan(&count); err != nil {
 			t.Fatal(err)
 		}
 		// Throw an error if any migration was applied more than once

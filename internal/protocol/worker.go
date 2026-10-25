@@ -3,13 +3,17 @@ package protocol
 
 import (
 	"errors"
+	"fmt"
 	"time"
 
 	"github.com/pocketradio/bergen/internal/domain"
 )
 
-// APIVersion is the current worker API version.
+// APIVersion is the current version prefix for public API endpoints.
 const APIVersion = "v1"
+
+// WorkerSubmitIdempotencyKeyHeader is required for idempotent worker result submissions.
+const WorkerSubmitIdempotencyKeyHeader = IdempotencyKeyHeader
 
 // Capability describes media a worker can process.
 type Capability struct {
@@ -37,7 +41,7 @@ type HeartbeatRequest struct {
 	AttemptID domain.AttemptID `json:"attempt_id"`
 }
 
-// HeartbeatResponse returns the lease duration selected by the coordinator.
+// HeartbeatResponse returns the lease expiry selected by the coordinator.
 type HeartbeatResponse struct {
 	LeaseExpiresAt time.Time `json:"lease_expires_at"`
 }
@@ -54,12 +58,6 @@ type SubmitRequest struct {
 type SubmitResponse struct {
 	ResultID domain.ResultID    `json:"result_id"`
 	State    domain.ResultState `json:"state"`
-}
-
-// ErrorResponse is the stable, secret-safe API error shape.
-type ErrorResponse struct {
-	Code    string `json:"code"`
-	Message string `json:"message"`
 }
 
 // ValidatePollRequest checks the worker capabilities required for scheduling.
@@ -81,6 +79,14 @@ func ValidateTaskAssignment(assignment TaskAssignment) error {
 	return domain.ValidateEncodeProfile(assignment.Profile)
 }
 
+// ValidateHeartbeatResponse checks that a heartbeat response contains a server-selected lease expiry.
+func ValidateHeartbeatResponse(response HeartbeatResponse) error {
+	if response.LeaseExpiresAt.IsZero() {
+		return errors.New("heartbeat response requires lease expiry")
+	}
+	return nil
+}
+
 // ValidateHeartbeatRequest checks that a heartbeat identifies an attempt.
 func ValidateHeartbeatRequest(request HeartbeatRequest) error {
 	if request.AttemptID == "" {
@@ -91,11 +97,28 @@ func ValidateHeartbeatRequest(request HeartbeatRequest) error {
 
 // ValidateSubmitRequest checks result metadata before coordinator authorization.
 func ValidateSubmitRequest(request SubmitRequest) error {
-	if request.AttemptID == "" || request.ObjectKey == "" {
-		return errors.New("result submission requires attempt ID and object key")
+	if request.AttemptID == "" {
+		return errors.New("result submission requires attempt ID")
 	}
-	if request.Size < 0 || len(request.SHA256) != 64 {
-		return errors.New("result submission requires non-negative size and SHA-256 checksum")
+	if err := domain.ValidateObjectKey(request.ObjectKey); err != nil {
+		return fmt.Errorf("result submission object key: %w", err)
+	}
+	if request.Size < 0 {
+		return errors.New("result submission requires non-negative size")
+	}
+	if err := domain.ValidateSHA256(request.SHA256); err != nil {
+		return fmt.Errorf("result submission checksum: %w", err)
+	}
+	return nil
+}
+
+// ValidateSubmitResponse checks that an accepted submission is still awaiting validation.
+func ValidateSubmitResponse(response SubmitResponse) error {
+	if response.ResultID == "" {
+		return errors.New("submission response requires result ID")
+	}
+	if response.State != domain.ResultSubmitted && response.State != domain.ResultValidating {
+		return errors.New("submission response requires submitted or validating state")
 	}
 	return nil
 }
